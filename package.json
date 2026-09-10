@@ -5,6 +5,10 @@
   "private": true,
   "description": "Lightweight Electron shell that hosts the existing `dsh --profile web` UI in its own window.",
   "license": "MIT",
+  "author": {
+    "name": "SaltyIce42",
+    "email": "SaltyIce42@users.noreply.github.com"
+  },
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
