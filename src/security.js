@@ -54,10 +54,12 @@ class SecurityPolicy {
    * @param {object} options
    * @param {import('./log').BackendLog} options.log
    * @param {{isDevelopment: boolean}} options.mode
+   * @param {import('./strings').StringTable} options.strings Localized UI strings.
    */
-  constructor({ log, mode }) {
+  constructor({ log, mode, strings }) {
     this.log = log;
     this.mode = mode;
+    this.strings = strings;
     /**
      * Allowed origin, e.g. `http://127.0.0.1:51234`. Set once the backend reports its port —
      * never hard-coded, because the port is OS-assigned on every launch.
@@ -186,25 +188,26 @@ class SecurityPolicy {
    */
   attachContextMenu(contents) {
     contents.on('context-menu', (_event, params) => {
+      const s = this.strings;
       /** @type {import('electron').MenuItemConstructorOptions[]} */
       const template = [];
 
       if (params.isEditable) {
         template.push(
-          { role: 'undo', label: '撤销' },
-          { role: 'redo', label: '重做' },
+          { role: 'undo', label: s.undo },
+          { role: 'redo', label: s.redo },
           { type: 'separator' },
-          { role: 'cut', label: '剪切' },
-          { role: 'copy', label: '复制' },
-          { role: 'paste', label: '粘贴' },
+          { role: 'cut', label: s.cut },
+          { role: 'copy', label: s.copy },
+          { role: 'paste', label: s.paste },
           // Spelling is disabled in webPreferences, so paste-and-match-style is noise here.
           { type: 'separator' },
-          { role: 'selectAll', label: '全选' },
+          { role: 'selectAll', label: s.selectAll },
         );
       } else if (params.selectionText && params.selectionText.trim() !== '') {
-        template.push({ role: 'copy', label: '复制' });
+        template.push({ role: 'copy', label: s.copy });
         template.push({
-          label: '复制纯文本',
+          label: s.ctxCopyAsPlainText,
           click: () => clipboard.writeText(params.selectionText),
         });
       }
@@ -214,12 +217,12 @@ class SecurityPolicy {
           template.push({ type: 'separator' });
         }
         template.push({
-          label: '在浏览器中打开链接',
+          label: s.ctxOpenLinkInBrowser,
           enabled: isSafeExternalUrl(params.linkURL),
           click: () => openExternal(params.linkURL),
         });
         template.push({
-          label: '复制链接地址',
+          label: s.ctxCopyLinkAddress,
           click: () => clipboard.writeText(params.linkURL),
         });
       }
@@ -229,11 +232,11 @@ class SecurityPolicy {
           template.push({ type: 'separator' });
         }
         template.push({
-          label: '复制图片',
+          label: s.ctxCopyImage,
           click: () => contents.copyImageAt(params.x, params.y),
         });
         template.push({
-          label: '复制图片地址',
+          label: s.ctxCopyImageAddress,
           click: () => clipboard.writeText(params.srcURL),
         });
       }
@@ -245,7 +248,7 @@ class SecurityPolicy {
       if (this.mode.isDevelopment) {
         template.push({ type: 'separator' });
         template.push({
-          label: '检查元素',
+          label: s.ctxInspectElement,
           click: () => contents.inspectElement(params.x, params.y),
         });
       }

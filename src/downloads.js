@@ -15,13 +15,17 @@
 const { Notification, dialog, shell } = require('electron');
 const path = require('path');
 
+const { getStrings } = require('./strings');
+
 class DownloadManager {
   /**
    * @param {object} options
    * @param {import('./log').BackendLog} options.log
+   * @param {import('./strings').StringTable} [options.strings] Localized UI strings.
    */
-  constructor({ log }) {
+  constructor({ log, strings }) {
     this.log = log;
+    this.strings = strings ?? getStrings('zh');
     /** @type {import('electron').BrowserWindow|null} */
     this.window = null;
     /** Downloads seen in this session, newest last. Exposed for the tray/menu. */
@@ -54,9 +58,9 @@ class DownloadManager {
     // Let the user choose where it goes. Without this, `savePath` defaults to the OS download
     // directory and the file appears with no acknowledgement at all.
     item.setSaveDialogOptions({
-      title: `保存 ${filename}`,
+      title: this.strings.downloadSaveTitle(filename),
       defaultPath: path.join(downloadDirectory(), filename),
-      buttonLabel: '保存',
+      buttonLabel: this.strings.save,
     });
 
     this.log.write(`download started: ${filename}`);
@@ -96,7 +100,7 @@ class DownloadManager {
 
     if (offline && Notification.isSupported()) {
       const notification = new Notification({
-        title: '下载完成',
+        title: this.strings.downloadSavedTitle,
         body: path.basename(target),
       });
       notification.on('click', () => shell.showItemInFolder(target));
@@ -107,10 +111,10 @@ class DownloadManager {
     void dialog
       .showMessageBox(win ?? undefined, {
         type: 'info',
-        title: '下载完成',
-        message: `已保存到：\n${target}`,
-        detail: '可以打开所在文件夹来查看该文件。',
-        buttons: ['打开所在文件夹', '关闭'],
+        title: this.strings.downloadSavedTitle,
+        message: this.strings.downloadSavedMessage(target),
+        detail: this.strings.downloadSavedDetail,
+        buttons: [this.strings.downloadOpenFolder, this.strings.close],
         defaultId: 0,
         cancelId: 1,
         noLink: true,
@@ -131,12 +135,13 @@ class DownloadManager {
     if (win === null || win.isDestroyed()) {
       return;
     }
-    const reason = state === 'cancelled' ? '下载已取消。' : '下载被中断。';
+    const reason =
+      state === 'cancelled' ? this.strings.downloadCancelled : this.strings.downloadInterrupted;
     void dialog.showMessageBox(win, {
       type: 'warning',
-      title: '下载未完成',
-      message: `${filename}：${reason}`,
-      buttons: ['确定'],
+      title: this.strings.downloadFailedTitle,
+      message: this.strings.downloadFailedMessage(filename, reason),
+      buttons: [this.strings.ok],
       noLink: true,
     });
   }

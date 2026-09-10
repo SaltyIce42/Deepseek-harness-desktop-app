@@ -5,87 +5,37 @@
  *
  * The browser gives the dsh UI a pile of affordances for free — reload, devtools, zoom, print
  * — that a bare Electron window does not have. The View menu restores the ones that matter so
- * the desktop build is not a downgrade. Menu labels are Chinese when the OS locale is Chinese,
- * falling back to English otherwise.
+ * the desktop build is not a downgrade.
+ *
+ * This module also owns **language selection** for the whole shell; the strings themselves live
+ * in `strings.js`.
  *
  * The tray is what makes "close to tray" meaningful: it is the only way back to a window that
  * has been hidden while the backend keeps running.
  */
 
-const { Menu, Tray, app, nativeImage, shell } = require('electron');
+const { Menu, Tray, app, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-/** Menu/UI strings keyed by locale bucket. */
-const STRINGS = {
-  zh: {
-    file: '文件',
-    switchWorkspace: '切换工作区…',
-    openLogs: '打开日志文件夹',
-    openDownloads: '打开下载文件夹',
-    restartBackend: '重启后端',
-    browserOpen: '在浏览器中打开',
-    quit: '退出',
-    edit: '编辑',
-    undo: '撤销',
-    redo: '重做',
-    cut: '剪切',
-    copy: '复制',
-    paste: '粘贴',
-    selectAll: '全选',
-    view: '视图',
-    reload: '重新加载',
-    forceReload: '强制重新加载',
-    toggleDevTools: '开发者工具',
-    resetZoom: '实际大小',
-    zoomIn: '放大',
-    zoomOut: '缩小',
-    fullscreen: '全屏',
-    help: '帮助',
-    about: '关于',
-    showWindow: '显示主窗口',
-    trayTooltip: 'DeepSeek Harness Desktop',
-  },
-  en: {
-    file: 'File',
-    switchWorkspace: 'Switch Workspace…',
-    openLogs: 'Open Logs Folder',
-    openDownloads: 'Open Downloads Folder',
-    restartBackend: 'Restart Backend',
-    browserOpen: 'Open in Browser',
-    quit: 'Exit',
-    edit: 'Edit',
-    undo: 'Undo',
-    redo: 'Redo',
-    cut: 'Cut',
-    copy: 'Copy',
-    paste: 'Paste',
-    selectAll: 'Select All',
-    view: 'View',
-    reload: 'Reload',
-    forceReload: 'Force Reload',
-    toggleDevTools: 'Developer Tools',
-    resetZoom: 'Actual Size',
-    zoomIn: 'Zoom In',
-    zoomOut: 'Zoom Out',
-    fullscreen: 'Full Screen',
-    help: 'Help',
-    about: 'About',
-    showWindow: 'Show Main Window',
-    trayTooltip: 'DeepSeek Harness Desktop',
-  },
-};
+const { STRINGS, collectLocaleSignals, detectLocale, getStrings } = require('./strings');
 
 /**
- * Pick the Chinese or English string table from the OS locale.
+ * Ask Chromium to load the Simplified-Chinese locale pack.
  *
- * @returns {typeof STRINGS.zh}
+ * Electron exposes `--lang` as a command-line switch. It must be appended **before** `ready`,
+ * because Chromium consumes the switch during browser-process startup; calling it later has no
+ * effect. Without this the shell's menu labels would be translated but Chromium's own surfaces
+ * would stay English.
  */
-function pickStrings() {
+function applyLanguageSwitch() {
+  if (detectLocale() !== 'zh') {
+    return;
+  }
   try {
-    return app.getLocale().toLowerCase().startsWith('zh') ? STRINGS.zh : STRINGS.en;
+    app.commandLine.appendSwitch('lang', 'zh-CN');
   } catch {
-    return STRINGS.zh;
+    // Not fatal: the shell's own menus are still translated.
   }
 }
 
@@ -104,13 +54,14 @@ class AppChrome {
    * @param {import('./log').BackendLog} options.log
    * @param {string} options.assetsDir
    * @param {{isDevelopment: boolean}} options.mode
+   * @param {import('./strings').StringTable} options.strings Localized UI strings.
    */
-  constructor({ actions, log, assetsDir, mode }) {
+  constructor({ actions, log, assetsDir, mode, strings }) {
     this.actions = actions;
     this.log = log;
     this.assetsDir = assetsDir;
     this.mode = mode;
-    this.strings = pickStrings();
+    this.strings = strings ?? getStrings(detectLocale());
     /** @type {Tray|null} */
     this.tray = null;
   }
@@ -119,6 +70,10 @@ class AppChrome {
   installMenu() {
     const s = this.strings;
     const a = this.actions;
+
+    this.log.write(
+      `ui language: ${detectLocale()} (chromium=${collectLocaleSignals().chromiumLocale})`,
+    );
 
     /** @type {import('electron').MenuItemConstructorOptions[]} */
     const template = [
@@ -197,8 +152,8 @@ class AppChrome {
   }
 
   /**
-   * Prefer the @2x icon when the display scale factor asks for it; `nativeImage` does not
-   * upscale for us.
+   * Add the @2x icon as a second representation so Electron can pick per scale factor instead
+   * of blurring a 16px icon on a 200% display.
    *
    * @returns {import('electron').NativeImage|null}
    */
@@ -210,8 +165,6 @@ class AppChrome {
       return null;
     }
 
-    // `@2x` is a filename convention Electron understands: adding both representations to one
-    // image lets it choose per scale factor instead of blurring a 16px icon on a 200% display.
     const image = nativeImage.createFromPath(standard);
     if (fs.existsSync(hidpi)) {
       image.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(hidpi) });
@@ -246,4 +199,4 @@ class AppChrome {
   }
 }
 
-module.exports = { AppChrome, pickStrings, STRINGS };
+module.exports = { AppChrome, applyLanguageSwitch, STRINGS };

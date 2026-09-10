@@ -40,11 +40,18 @@ class WindowManager {
    * @param {import('./settings').Settings} options.settings
    * @param {import('./log').BackendLog} options.log
    * @param {string} options.assetsDir
+   * @param {string} [options.windowTitle] Localized title for the OS title bar.
    */
-  constructor({ settings, log, assetsDir }) {
+  constructor({ settings, log, assetsDir, windowTitle }) {
     this.settings = settings;
     this.log = log;
     this.assetsDir = assetsDir;
+    /**
+     * The backend's own page sets `document.title` to `DeepSeek Harness`, in English, which
+     * Chromium propagates to the OS title bar. `page-title-updated` is prevented so the shell's
+     * localized title wins instead.
+     */
+    this.windowTitle = windowTitle || 'DeepSeek Harness Desktop';
     /** @type {BrowserWindow|null} */
     this.win = null;
     /** @type {NodeJS.Timeout|null} */
@@ -77,7 +84,7 @@ class WindowManager {
       backgroundColor: '#1b1c1d',
       // Native title bar for v1: no custom chrome, no window controls to reimplement.
       autoHideMenuBar: false,
-      title: 'DeepSeek Harness Desktop',
+      title: this.windowTitle,
       icon: path.join(this.assetsDir, 'icon.ico'),
       webPreferences: {
         // Deliberately absent: `preload`. See the file header.
@@ -104,12 +111,36 @@ class WindowManager {
 
     this.attachGeometryPersistence(this.win);
     this.attachNavigationActions(this.win);
+    this.attachTitleGuard(this.win);
 
     this.win.on('closed', () => {
       this.win = null;
     });
 
     return this.win;
+  }
+
+  /**
+   * Keep the OS title bar in the shell's localized language.
+   *
+   * Only the backend page is guarded: the splash and error surfaces are the shell's own files
+   * and carry titles that match the UI language, so they are left alone.
+   *
+   * @param {BrowserWindow} win
+   */
+  attachTitleGuard(win) {
+    win.on('page-title-updated', (event, title, explicitSet) => {
+      const current = win.webContents.getURL();
+      const isBackendPage = current.startsWith('http://127.0.0.1:');
+
+      if (explicitSet && !isBackendPage) {
+        // An explicit title from one of our own pages (splash/error) is authoritative.
+        return;
+      }
+      event.preventDefault();
+      win.setTitle(this.windowTitle);
+      void title;
+    });
   }
 
   /** @returns {BrowserWindow|null} The live window, or null when none exists. */

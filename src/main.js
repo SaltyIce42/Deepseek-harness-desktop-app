@@ -23,13 +23,18 @@ const path = require('path');
 const { Backend, reapOrphan } = require('./child');
 const { DownloadManager, downloadDirectory } = require('./downloads');
 const { BackendLog } = require('./log');
-const { AppChrome } = require('./menu');
+const { AppChrome, applyLanguageSwitch } = require('./menu');
 const { SecurityPolicy } = require('./security');
 const { Settings } = require('./settings');
+const { detectLocale, getStrings } = require('./strings');
 const { WindowManager } = require('./windows');
 
 const IS_DEVELOPMENT = !app.isPackaged;
 const APP_ID = 'com.saltyice.dshdesktop';
+
+// Must run before `ready`: Chromium consumes `--lang` during browser-process startup, so a
+// later call would be ignored and native Chromium surfaces would stay English.
+applyLanguageSwitch();
 
 /** Resolution order for the dsh home directory, mirroring the CLI's own default. */
 function resolveDshHome() {
@@ -67,14 +72,30 @@ app.setPath('crashDumps', path.join(userDataDir, 'crash-dumps'));
 const logsDir = path.join(userDataDir, 'logs');
 const assetsDir = path.join(__dirname, '..', 'assets');
 
+/**
+ * UI language for this run, decided once from every available locale signal (Chromium's UI
+ * locale, the OS locale, and Windows' per-user language list). The window title and all shell
+ * chrome follow it.
+ */
+const strings = getStrings(detectLocale());
+
 const settings = new Settings();
 const log = new BackendLog(logsDir);
 const dshHome = resolveDshHome();
 
-const windowManager = new WindowManager({ settings, log, assetsDir });
-const downloads = new DownloadManager({ log });
-const backend = new Backend({ settings, log, dshHome, stateDir: userDataDir });
-const security = new SecurityPolicy({ log, mode: { isDevelopment: IS_DEVELOPMENT } });
+const windowManager = new WindowManager({
+  settings,
+  log,
+  assetsDir,
+  windowTitle: strings.windowTitle,
+});
+const downloads = new DownloadManager({ log, strings });
+const backend = new Backend({ settings, log, dshHome, stateDir: userDataDir, strings });
+const security = new SecurityPolicy({
+  log,
+  mode: { isDevelopment: IS_DEVELOPMENT },
+  strings,
+});
 
 /** True once the user has asked to exit, so close-to-tray stops intercepting. */
 let quitting = false;
@@ -95,6 +116,7 @@ const chrome = new AppChrome({
   log,
   assetsDir,
   mode: { isDevelopment: IS_DEVELOPMENT },
+  strings,
 });
 
 /* -------------------------------------------------------------------------- *
@@ -135,7 +157,7 @@ function bootstrap() {
 
   const win = windowManager.create();
   downloads.setWindow(win);
-  windowManager.showSplash({ text: '正在启动后端…' });
+  windowManager.showSplash({ text: strings.startingBackend });
 
   win.on('close', (event) => {
     if (quitting) {
@@ -162,7 +184,10 @@ async function startBackend() {
   }
 
   security.setAllowedPort(backend.port ?? 0);
-  windowManager.showSplash({ text: '正在加载界面…', meta: `127.0.0.1:${backend.port}` });
+  windowManager.showSplash({
+    text: strings.loadingUi,
+    meta: `127.0.0.1:${backend.port}`,
+  });
 
   try {
     await windowManager.loadBackend(result.url);
@@ -190,7 +215,7 @@ async function startBackend() {
  */
 function buildErrorInfo(error, stage) {
   return {
-    message: error instanceof Error ? error.message : String(error ?? '未知错误'),
+    message: error instanceof Error ? error.message : String(error ?? strings.unknownError),
     stage,
     exitCode: null,
     nodePath: backend.nodePath,
@@ -216,8 +241,8 @@ backend.on('exit', ({ code }) => {
 
 backend.on('restarting', ({ attempt, delayMs }) => {
   windowManager.showSplash({
-    text: '后端已停止，正在自动重启…',
-    meta: `第 ${attempt} 次尝试 · ${(delayMs / 1000).toFixed(0)} 秒后`,
+    text: strings.restartingBackend,
+    meta: strings.restartAttempt(attempt, (delayMs / 1000).toFixed(0)),
   });
 });
 
@@ -238,7 +263,7 @@ backend.on('failed', ({ error, stage, exitCode }) => {
  */
 async function restartBackend() {
   log.write('restart requested by user');
-  windowManager.showSplash({ text: '正在重启后端…' });
+  windowManager.showSplash({ text: strings.restartingManually });
   const result = await backend.restart({ resetBackoff: true });
   if (!result.ok || !result.url) {
     windowManager.showError(buildErrorInfo(result.error, 'restart'));
@@ -261,10 +286,10 @@ async function switchWorkspace() {
   const win = windowManager.get();
   const current = settings.get('workspace') ?? os.homedir();
   const result = await dialog.showOpenDialog(win ?? undefined, {
-    title: '选择工作区目录',
+    title: strings.workspaceTitle,
     defaultPath: current,
     properties: ['openDirectory', 'createDirectory'],
-    buttonLabel: '使用此目录',
+    buttonLabel: strings.workspaceButton,
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -281,7 +306,7 @@ async function switchWorkspace() {
   log.write(`workspace changed to ${chosen}`);
 
   if (Notification.isSupported() && (win === null || !win.isVisible())) {
-    new Notification({ title: '工作区已切换', body: chosen }).show();
+    new Notification({ title: strings.workspaceChangedTitle, body: chosen }).show();
   }
 
   await restartBackend();
@@ -292,9 +317,9 @@ function openInBrowser() {
   if (backend.authenticatedUrl === null) {
     void dialog.showMessageBox({
       type: 'warning',
-      title: '后端未运行',
-      message: '后端当前没有运行，无法在浏览器中打开。',
-      buttons: ['确定'],
+      title: strings.backendMissingTitle,
+      message: strings.backendMissingMessage,
+      buttons: [strings.ok],
       noLink: true,
     });
     return;
@@ -308,23 +333,23 @@ function openInBrowser() {
 async function showAbout() {
   const win = windowManager.get();
   const details = [
-    `外壳版本：${app.getVersion()}`,
-    `Electron：${process.versions.electron}`,
-    `Node（外壳）：${process.versions.node}`,
-    `dsh：${backend.dshVersion ?? '未知'}`,
-    `后端端口：${backend.port ?? '未运行'}`,
-    `工作区：${settings.get('workspace') ?? os.homedir()}`,
-    `DSH_HOME：${dshHome}`,
-    `设置文件：${settings.file ?? '未初始化'}`,
-    `日志文件：${log.file}`,
+    strings.aboutShellVersion(app.getVersion()),
+    strings.aboutElectron(process.versions.electron),
+    strings.aboutNode(process.versions.node),
+    strings.aboutDsh(backend.dshVersion ?? strings.unknown),
+    strings.aboutPort(backend.port ?? strings.notRunning),
+    strings.aboutWorkspace(settings.get('workspace') ?? os.homedir()),
+    strings.aboutDshHome(dshHome),
+    strings.aboutSettings(settings.file ?? strings.notInitialized),
+    strings.aboutLogs(log.file),
   ].join('\n');
 
   await dialog.showMessageBox(win ?? undefined, {
     type: 'info',
-    title: '关于 DeepSeek Harness Desktop',
+    title: strings.aboutTitle,
     message: 'DeepSeek Harness Desktop',
     detail: details,
-    buttons: ['确定'],
+    buttons: [strings.ok],
     noLink: true,
   });
 }
@@ -356,13 +381,13 @@ async function handleCloseRequest() {
   const win = windowManager.get();
   const result = await dialog.showMessageBox(win ?? undefined, {
     type: 'question',
-    title: '关闭窗口',
-    message: '要退出应用，还是最小化到托盘继续在后台运行？',
-    detail: '最小化到托盘后，正在执行的长任务不会被中断。',
-    buttons: ['最小化到托盘', '退出应用', '取消'],
+    title: strings.closeTitle,
+    message: strings.closeMessage,
+    detail: strings.closeDetail,
+    buttons: [strings.closeToTray, strings.closeQuit, strings.cancel],
     defaultId: 0,
     cancelId: 2,
-    checkboxLabel: '记住我的选择',
+    checkboxLabel: strings.closeRemember,
     checkboxChecked: false,
     noLink: true,
   });
@@ -437,10 +462,10 @@ async function handleAction(action) {
 async function pickDshBinary() {
   const win = windowManager.get();
   const result = await dialog.showOpenDialog(win ?? undefined, {
-    title: '选择 dsh 的 lib/bin.js',
+    title: strings.pickDshTitle,
     properties: ['openFile'],
-    filters: [{ name: 'dsh bin.js', extensions: ['js'] }],
-    buttonLabel: '使用此文件',
+    filters: [{ name: strings.pickDshFilter, extensions: ['js'] }],
+    buttonLabel: strings.pickDshButton,
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -451,9 +476,9 @@ async function pickDshBinary() {
   if (path.basename(chosen) !== 'bin.js') {
     await dialog.showMessageBox(win ?? undefined, {
       type: 'warning',
-      title: '文件可能不正确',
-      message: '选中的文件不是 bin.js，仍将尝试使用它。',
-      buttons: ['继续', '取消'],
+      title: strings.pickDshWrongTitle,
+      message: strings.pickDshWrongMessage,
+      buttons: [strings.ok, strings.cancel],
       defaultId: 1,
       noLink: true,
     });
@@ -471,10 +496,10 @@ async function pickDshBinary() {
 async function pickNodeBinary() {
   const win = windowManager.get();
   const result = await dialog.showOpenDialog(win ?? undefined, {
-    title: '选择 node.exe',
+    title: strings.pickNodeTitle,
     properties: ['openFile'],
-    filters: [{ name: 'node.exe', extensions: ['exe'] }],
-    buttonLabel: '使用此文件',
+    filters: [{ name: strings.pickNodeFilter, extensions: ['exe'] }],
+    buttonLabel: strings.pickNodeButton,
   });
 
   if (result.canceled || result.filePaths.length === 0) {

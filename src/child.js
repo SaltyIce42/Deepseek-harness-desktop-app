@@ -25,6 +25,8 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 
+const { getStrings } = require('./strings');
+
 /** Regex for the backend's readiness line, e.g. `dsh web: http://127.0.0.1:51234/?token=abc`. */
 const READY_LINE = /^dsh web:\s+(https?:\/\/\S+)/;
 
@@ -357,13 +359,17 @@ class Backend extends EventEmitter {
    * @param {import('./log').BackendLog} options.log
    * @param {string} options.dshHome
    * @param {string} options.stateDir Directory for `backend.json` (the app's userData dir).
+   * @param {import('./strings').StringTable} [options.strings] Localized failure messages.
    */
-  constructor({ settings, log, dshHome, stateDir }) {
+  constructor({ settings, log, dshHome, stateDir, strings }) {
     super();
     this.settings = settings;
     this.log = log;
     this.dshHome = dshHome;
     this.stateFile = path.join(stateDir, 'backend.json');
+    // Falls back to the Chinese table so a caller that forgets to inject strings still gets
+    // readable messages rather than `undefined` in a dialog.
+    this.strings = strings ?? getStrings('zh');
 
     /** @type {import('child_process').ChildProcess|null} */
     this.child = null;
@@ -432,7 +438,7 @@ class Backend extends EventEmitter {
       await this.startPromise;
       return this.authenticatedUrl !== null
         ? { ok: true, url: this.authenticatedUrl }
-        : { ok: false, error: new Error('后端启动失败') };
+        : { ok: false, error: new Error(this.strings.backendStartFailedShort) };
     }
 
     this.stopping = false;
@@ -451,16 +457,12 @@ class Backend extends EventEmitter {
     this.resolveTools();
 
     if (this.nodePath === null) {
-      const error = new Error(
-        '找不到 Node.js。请安装 Node.js，或在错误页手动指定 node.exe 的位置。',
-      );
+      const error = new Error(this.strings.nodeMissing);
       this.emit('failed', { error, stage: 'resolve-node' });
       return { ok: false, error };
     }
     if (this.dshBin === null) {
-      const error = new Error(
-        '找不到 dsh 入口文件（@deepseek-ai/dsh/lib/bin.js）。npx 缓存可能已被回收，请在错误页手动指定位置。',
-      );
+      const error = new Error(this.strings.dshMissing);
       this.emit('failed', { error, stage: 'resolve-dsh' });
       return { ok: false, error };
     }
@@ -508,9 +510,7 @@ class Backend extends EventEmitter {
     const url = await this.waitForUrl(child);
     if (url === null) {
       this.exitAccounted = true;
-      const error = new Error(
-        `等待后端就绪超时（${READY_TIMEOUT_MS / 1000} 秒内未打印启动地址）。`,
-      );
+      const error = new Error(this.strings.readyTimeout(READY_TIMEOUT_MS / 1000));
       this.emit('failed', { error, stage: 'timeout', exitCode: child.exitCode });
       await this.stop();
       return { ok: false, error };
@@ -694,7 +694,7 @@ class Backend extends EventEmitter {
       this.log.write(`backend exited (code ${code}); restart budget exhausted`, { source: 'error' });
       this.emit('failed', {
         error: new Error(
-          `后端已停止（退出码 ${code}），并已用尽 ${RESTART_DELAYS_MS.length} 次自动重启。`,
+          this.strings.restartsExhausted(code, RESTART_DELAYS_MS.length),
         ),
         stage: 'exhausted',
         exitCode: code,

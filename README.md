@@ -132,6 +132,43 @@ Edit `%APPDATA%\dsh-desktop\settings.json` directly, or use the error page's pic
 | Open in system browser | 文件 or tray (opens the authenticated URL) |
 | Open logs / downloads folder | 文件 or tray |
 
+## Language
+
+The shell's own chrome is bilingual (Chinese / English) and follows the system language:
+
+- the native menu bar and tray menu
+- the OS window title
+- the right-click menu
+- download and close-confirmation dialogs
+- startup and error messages
+
+Detection is deliberately broader than `app.getLocale()`. Chromium reports the Windows **UI**
+language, which can be English even on a Chinese machine — on such a system `app.getLocale()`
+returns `en-US` while the regional format and language list are `zh-CN`, and a naive check
+produces an English menu bar for a Chinese user. The shell therefore also inspects the OS
+locale and the per-user language list at
+`HKCU\Control Panel\International\User Profile`. **Chinese wins if any signal says Chinese.**
+
+Force a language explicitly when testing:
+
+```powershell
+$env:DSH_DESKTOP_LANG = 'en'   # or 'zh'
+```
+
+### What the shell cannot localize
+
+The page inside the window is the **dsh web UI**, which ships from `@deepseek-ai/dsh-client-ui-*`
+packages. The shell only isolates that page; it never rewrites its text. Those packages carry
+their own localization, and their Chinese coverage is uneven — `dsh-client-locale` provides only
+a small shared dictionary (确定 / 取消 / 复制 / 重试 …), and each plugin author decides
+independently what else to translate. Some plugins (chat, conversation) are largely Chinese;
+others (settings, layout) are English-only.
+
+So you may see mixed-language text inside the window. That is upstream's state, not a shell
+defect, and changing it would mean patching npm-managed plugin bundles — which would be
+overwritten on the next `dsh` update. Enable Chinese there via the app's own language setting in
+**设置 → 通用**, which stores `locale.preference` in `$DSH_HOME\settings.yaml`.
+
 ## Packaging
 
 ```powershell
