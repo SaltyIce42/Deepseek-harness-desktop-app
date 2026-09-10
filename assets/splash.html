@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'"
+    />
+    <title>DeepSeek Harness Desktop</title>
+    <style>
+      /*
+        Startup surface. Shown from window creation until the backend prints its readiness URL,
+        then replaced by the real UI. It must therefore render instantly and never block:
+        no external requests, no web fonts, no images beyond the local brand mark.
+        Colours intentionally follow the dsh web UI's dark palette so the swap to the real
+        window is visually quiet.
+      */
+      :root {
+        --bg: #1b1c1d;
+        --fg: #ececec;
+        --muted: #8b8d8f;
+        --accent: #4d6bfe;
+        --track: #303234;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7f8;
+          --fg: #1b1c1d;
+          --muted: #6b6d70;
+          --track: #e0e2e5;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+        /* The splash is chrome, not content: never let it be text-selected or dragged. */
+        user-select: none;
+        -webkit-user-select: none;
+        overflow: hidden;
+      }
+
+      .mark {
+        width: 72px;
+        height: 72px;
+        opacity: 0.92;
+        animation: breathe 2.4s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.75;
+        }
+        50% {
+          transform: scale(1.06);
+          opacity: 1;
+        }
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .status {
+        margin: 0;
+        max-width: 420px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+        min-height: 1.6em;
+      }
+
+      /* Indeterminate progress: the backend start time is genuinely unknown, so we never
+         fake a percentage. */
+      .track {
+        width: 200px;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--track);
+        overflow: hidden;
+      }
+
+      .bar {
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--accent);
+        animation: slide 1.3s ease-in-out infinite;
+      }
+
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+
+      .meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .mark,
+        .bar {
+          animation: none;
+        }
+        .bar {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img class="mark" src="icon.svg" alt="" aria-hidden="true" />
+
+    <h1>DeepSeek Harness Desktop</h1>
+    <p class="status" id="status">正在启动后端…</p>
+    <div class="track" role="progressbar" aria-label="启动进度"><div class="bar"></div></div>
+    <p class="meta" id="meta"></p>
+
+    <script>
+      /*
+        The main process passes display state as query parameters. This page never uses a
+        preload script and never talks back to the main process: it is pure output, so the
+        window can use the most restrictive webPreferences available.
+      */
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var text = params.get('text');
+        var meta = params.get('meta');
+        if (text) {
+          document.getElementById('status').textContent = text;
+        }
+        if (meta) {
+          document.getElementById('meta').textContent = meta;
+        }
+      })();
+    </script>
+  </body>
+</html>

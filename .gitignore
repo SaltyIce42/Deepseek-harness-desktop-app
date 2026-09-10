@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+*.log
+logs/
+.dev-home/
+Thumbs.db
+Desktop.ini
+.DS_Store

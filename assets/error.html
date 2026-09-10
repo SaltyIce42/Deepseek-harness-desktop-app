@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'"
+    />
+    <title>DeepSeek Harness Desktop — 启动失败</title>
+    <style>
+      /*
+        Failure surface. Replaced the splash page when the backend cannot be started or has
+        stopped for good after exhausting restarts.
+
+        Buttons are plain <a href="dsh-desktop://action/..."> links. The main process denies
+        every navigation whose scheme is not http/https/file and turns the `dsh-desktop`
+        scheme into an action, so this page needs **no preload and no IPC** — which is why the
+        window can keep `contextIsolation: true` and `sandbox: true` with nothing exposed.
+      */
+      :root {
+        --bg: #1b1c1d;
+        --panel: #242526;
+        --border: #35373a;
+        --fg: #ececec;
+        --muted: #9a9c9f;
+        --accent: #4d6bfe;
+        --danger: #ff6b6b;
+        --code: #16171a;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7f8;
+          --panel: #ffffff;
+          --border: #dfe1e4;
+          --fg: #1b1c1d;
+          --muted: #6b6d70;
+          --danger: #d13438;
+          --code: #f0f1f3;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+        overflow: auto;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 660px;
+        padding: 26px 28px 22px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+      }
+
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+
+      .mark {
+        width: 28px;
+        height: 28px;
+        flex: 0 0 auto;
+        opacity: 0.9;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      h1 .bad {
+        color: var(--danger);
+      }
+
+      .lead {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 4px 14px;
+        margin: 0 0 16px;
+        font-size: 12px;
+      }
+
+      dt {
+        color: var(--muted);
+      }
+
+      dd {
+        margin: 0;
+        font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+        word-break: break-all;
+      }
+
+      details {
+        margin-bottom: 18px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--code);
+        overflow: hidden;
+      }
+
+      summary {
+        padding: 8px 12px;
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 12px;
+        user-select: none;
+      }
+
+      pre {
+        margin: 0;
+        padding: 0 12px 12px;
+        max-height: 220px;
+        overflow: auto;
+        font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      a.button {
+        padding: 7px 15px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg);
+        font-size: 13px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      a.button:hover {
+        border-color: var(--muted);
+      }
+
+      a.button.primary {
+        border-color: transparent;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 500;
+      }
+
+      a.button.primary:hover {
+        filter: brightness(1.08);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="head">
+        <img class="mark" src="icon.svg" alt="" aria-hidden="true" />
+        <h1><span class="bad">后端未能启动</span> · DeepSeek Harness Desktop</h1>
+      </div>
+
+      <p class="lead" id="lead"></p>
+
+      <dl id="facts"></dl>
+
+      <details id="details" hidden>
+        <summary>查看后端输出（已脱敏，末尾 20 行）</summary>
+        <pre id="output"></pre>
+      </details>
+
+      <div class="actions">
+        <a class="button primary" href="dsh-desktop://action/retry">重试</a>
+        <a class="button" href="dsh-desktop://action/open-logs">打开日志</a>
+        <a class="button" href="dsh-desktop://action/pick-dsh">手动选择 dsh 位置…</a>
+        <a class="button" href="dsh-desktop://action/pick-node">手动选择 node…</a>
+        <a class="button" href="dsh-desktop://action/open-nodejs">获取 Node.js</a>
+        <a class="button" href="dsh-desktop://action/quit">退出</a>
+      </div>
+    </main>
+
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+
+        var lead = params.get('message');
+        document.getElementById('lead').textContent = lead || '未知错误。';
+
+        /*
+          Facts are rendered as text nodes only — never as HTML — so a hostile path or stderr
+          line cannot inject markup into this page.
+        */
+        var facts = [
+          ['退出码', params.get('exitCode')],
+          ['node', params.get('nodePath')],
+          ['dsh', params.get('dshBin')],
+          ['dsh 版本', params.get('dshVersion')],
+          ['工作区', params.get('workspace')],
+          ['日志文件', params.get('logFile')],
+        ];
+
+        var list = document.getElementById('facts');
+        facts.forEach(function (pair) {
+          if (!pair[1]) {
+            return;
+          }
+          var dt = document.createElement('dt');
+          dt.textContent = pair[0];
+          var dd = document.createElement('dd');
+          dd.textContent = pair[1];
+          list.appendChild(dt);
+          list.appendChild(dd);
+        });
+        if (!list.childNodes.length) {
+          list.hidden = true;
+        }
+
+        var output = params.get('output');
+        if (output) {
+          document.getElementById('output').textContent = output;
+          document.getElementById('details').hidden = false;
+        }
+      })();
+    </script>
+  </body>
+</html>

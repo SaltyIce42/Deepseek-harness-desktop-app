@@ -1,0 +1,28 @@
+appId: com.saltyice.dshdesktop
+productName: DeepSeek Harness Desktop
+copyright: Copyright © 2025 SaltyIce
+
+asar: true
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - src/**
+  - assets/**
+  - package.json
+
+win:
+  icon: assets/icon.ico
+  target:
+    - nsis
+    - dir
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DeepSeek Harness Desktop
