@@ -26,9 +26,12 @@ const MAX_LINE_LENGTH = 16 * 1024;
  *
  * Covers the concrete shapes this app can produce:
  * - `token=<value>` inside a query string (the readiness URL)
- * - bare `token=<value>` / `token: <value>` in prose or YAML
+ * - `token=value`, `token: value`, `"token": "value"` — quoted and unquoted, any casing
  * - `Authorization: Bearer <value>`
- * - `?token=...` variants in any casing
+ *
+ * A plain `\btoken\b` word-boundary match is not enough: in `{"token":"abc-123"}` the character
+ * before `token` is a quote, so there is no word boundary and the value would leak. The
+ * patterns are therefore anchored on the delimiter, not on the word.
  *
  * @param {string} text
  * @returns {string}
@@ -42,8 +45,10 @@ function sanitize(text) {
     text
       // ?token=abc123 / &token=abc123 (preserve the delimiter, mask the value)
       .replace(/([?&]token=)[^&\s"'#]+/gi, '$1***')
-      // token=abc123 / token: abc123 / "token": "abc123"
-      .replace(/(\btoken\b\s*[:=]\s*["']?)[^&\s"',}]+/gi, '$1***')
+      // Quoted value, JSON/YAML style: "token": "abc123" / token: 'abc123'
+      .replace(/(["']?token["']?\s*[:=]\s*)(["'])(?:\\.|(?!\2)[^\\])*\2/gi, '$1$2***$2')
+      // Unquoted value: token=abc123 / token: abc123 / "token": abc123
+      .replace(/(["']?token["']?\s*[:=]\s*)[^&\s"',}]+/gi, '$1***')
       // Bearer tokens
       .replace(/(\bBearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1***')
   );
